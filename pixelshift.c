@@ -1,4 +1,4 @@
-#define _GNU_SOURCE         /* See feature_test_macros(7) */
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -16,7 +16,8 @@ int main(int argc, char **argv)
     int in_fd = -1;
     int out_fd = -1;
     char *out_path = NULL;
-    int32_t xshift, yshift;
+    float xshift, yshift, xshift_dec, yshift_dec;
+    int32_t xshift_int, yshift_int;
     int ret;
     uint8_t *frame =  NULL;
     int i;
@@ -40,19 +41,21 @@ int main(int argc, char **argv)
         goto end;
     }
 
-    xshift = strtol(argv[3], NULL, 10);
+    xshift = atof(argv[3]);
     if (abs(xshift) > width) {
         fprintf(stderr, "shift must be between 0 and width\n");
         goto end;
     }
+    xshift_int = 0;
 
-    yshift = strtol(argv[4], NULL, 10);
+    yshift = atof(argv[4]);
     if (abs(yshift) > width) {
         fprintf(stderr, "shift must be between 0 and width\n");
         goto end;
     }
+    yshift_int = 0;
 
-    ret = asprintf(&out_path, "%s_shifted%d%d", argv[1], xshift, yshift);
+    ret = asprintf(&out_path, "%s_shifted%2.2f-%2.2f", argv[1], xshift, yshift);
     if (ret == 0) {
         fprintf(stderr, "couldn't allocate out file name\n");
         goto end;
@@ -76,25 +79,60 @@ int main(int argc, char **argv)
         fprintf(stderr, "couldn't read frame\n");
         goto end;
     } else {
+        /* shift by the integer value */
         /* shift on the x axis */
         if (xshift > 0) {
+            xshift_int = floor(xshift);
             for (i = width * width - 1; i >= 0; i--)
-                if ((i % width) >= xshift)
-                    frame[i] = frame[i - xshift];
+                if ((i % width) >= xshift_int)
+                    frame[i] = frame[i - xshift_int];
         } else if (xshift < 0) {
+            xshift_int = ceil(xshift);
             for (i = 0; i < width * width; i++)
-                if ((i % width) <= width + xshift)
-                    frame[i] = frame[i - xshift];
+                if ((i % width) <= width - 1 + xshift_int)
+                    frame[i] = frame[i - xshift_int];
         }
         /* shift on the y axis */
         if (yshift > 0) {
+            yshift_int = floor(yshift);
             for (i = width * width - 1; i >= 0; i--)
-                if ((i / width) >= yshift)
-                    frame[i] = frame[i - yshift * width];
-        } else if (yshift > 0) {
+                if ((i / width) >= yshift_int)
+                    frame[i] = frame[i - yshift_int * width];
+        } else if (yshift < 0) {
+            yshift_int = ceil(yshift);
             for (i = 0; i < width * width; i++)
-                if ((i / width) <= width + yshift)
-                    frame[i] = frame[i - yshift * width];
+                if ((i / width) <= width - 1 + yshift_int)
+                    frame[i] = frame[i - yshift_int * width];
+        }
+
+        /* shift by sub-integer value */
+        xshift_dec = xshift - xshift_int;
+        yshift_dec = yshift - yshift_int;
+
+        /* shift on the x axis */
+        if (xshift_dec > 0) {
+            for (i = width * width -1; i >= 0; i--)
+                if ((i % width) >= 1)
+                    frame[i] = (1 - xshift_dec)*frame[i] +
+                                xshift_dec*frame[i-1];
+        } else if (xshift_dec < 0) {
+            for (i = 0; i < width * width; i++)
+                if ((i % width) < width -1 - 1)
+                    frame[i] = -xshift_dec * frame[i] + 
+                               (1 + xshift_dec)*frame[i+1];
+        }
+        
+        /* shift on the y axis */
+        if (yshift > 0) {
+            for (i = width * width - 1; i >= 0; i--)
+                if ((i / width) >= 1)
+                    frame[i] = (1 - yshift_dec)*frame[i] +
+                                yshift_dec * frame[i - width];
+        } else if (yshift_int < 0) {
+            for (i = 0; i < width * width; i++)
+                if ((i / width) <= width - 1 - 1)
+                    frame[i] = -yshift_dec*frame[i] +
+                               (1 + yshift_dec)*frame[i - width];
         }
     }
 
